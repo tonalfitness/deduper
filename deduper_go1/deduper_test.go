@@ -132,6 +132,9 @@ func TestShutdown(t *testing.T) {
 	close(w.startChan)
 	wg.Wait()
 
+	// wait for the shutdown
+	time.Sleep(100 * time.Millisecond)
+
 	if w.counter != int32(uniqueRequests) {
 		t.Errorf("didn't dedupe: %d", w.counter)
 	}

@@ -4,7 +4,9 @@
 // managed by a broker which will only use the worker pool if the new request is unique.
 package deduper
 
-import "sync"
+import (
+	"sync"
+)
 
 // Deduper runs a fixed size worker pool that can run long-running
 // requests. The Deduper will de-duplicate requests that arrive while
@@ -97,14 +99,15 @@ func (dd *Deduper) Shutdown() {
 
 func (dd *Deduper) broker() {
 	savedRequest := make(map[interface{}][]*requestWrapper)
-	for {
+	shutdown := false
+	for !shutdown {
 		select {
 		case request := <-dd.requestCh:
 			dd.queueRequestChan(request, savedRequest)
 		case rw := <-dd.resultCh:
 			dd.processResult(rw, savedRequest)
 		case <-dd.shutdownChan:
-			break
+			shutdown = true
 		}
 	}
 
@@ -121,12 +124,13 @@ func (dd *Deduper) cleanup(savedRequest map[interface{}][]*requestWrapper) {
 	close(dd.workerCh)
 	wgDoneCh := make(chan struct{})
 	go dd.workersDone(wgDoneCh)
-	for {
+	wgDone := false
+	for !wgDone {
 		select {
 		case rw := <-dd.resultCh:
 			dd.processResult(rw, savedRequest)
 		case <-wgDoneCh:
-			break
+			wgDone = true
 		}
 	}
 	// not done yet... even though the workers are finished, there still could be unprecessed results left in resultCh
@@ -138,7 +142,7 @@ func (dd *Deduper) cleanup(savedRequest map[interface{}][]*requestWrapper) {
 
 func (dd *Deduper) workersDone(wgDoneCh chan struct{}) {
 	dd.wg.Wait()
-	<-wgDoneCh
+	close(wgDoneCh)
 }
 
 func (dd *Deduper) queueRequestChan(request *requestWrapper, savedRequest map[interface{}][]*requestWrapper) {
